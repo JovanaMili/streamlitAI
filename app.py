@@ -1,6 +1,13 @@
 # Simple Q&A App using Streamlit
 # Students: Replace the documents below with your own!
-
+# Fix SQLite version issue for ChromaDB on Streamlit Cloud
+try:
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+except ImportError:
+    pass
+    
 # IMPORTS - These are the libraries we need
 import streamlit as st          # Creates web interface components
 import chromadb                # Stores and searches through documents  
