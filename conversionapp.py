@@ -57,10 +57,17 @@ def main():
         value="output_markdown"
     )
 
+    # prepare session state for downloads
+    if "downloads" not in st.session_state:
+        st.session_state.downloads = []
+
     if st.button("Start conversion"):
         if not uploaded:
             st.error("No files selected.")
             return
+
+        # reset downloads list
+        st.session_state.downloads = []
 
         out_folder = Path(dest)
         out_folder.mkdir(parents=True, exist_ok=True)
@@ -73,7 +80,6 @@ def main():
         for idx, up in enumerate(uploaded, start=1):
             name = up.name
             status.text(f"Converting {name} ({idx}/{total})")
-            # write temp file
             with tempfile.NamedTemporaryFile(delete=False, suffix=Path(name).suffix) as tmp:
                 tmp.write(up.getvalue())
                 tmp_path = tmp.name
@@ -82,6 +88,10 @@ def main():
                 md = convert_to_markdown(tmp_path)
                 out_file = out_folder / f"{Path(name).stem}.md"
                 out_file.write_text(md, encoding="utf-8", errors="replace")
+
+                # store for download
+                st.session_state.downloads.append((out_file.name, md))
+
             except Exception as e:
                 st.warning(f"Failed: {name}: {e}")
 
@@ -89,6 +99,18 @@ def main():
 
         status.text("Conversion done.")
         st.success(f"Saved markdown files to {out_folder.resolve()}")
+
+    # show download buttons after conversion
+    if st.session_state.downloads:
+        st.markdown("### Download Converted Files")
+        for name, md in st.session_state.downloads:
+            st.download_button(
+                label=f"Download {name}",
+                data=md,
+                file_name=name,
+                mime="text/markdown",
+                key=f"dl_{name}"
+            )
 
 
 if __name__ == "__main__":
