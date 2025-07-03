@@ -1,11 +1,3 @@
-# FIX: Reset collection when problems occur
-def reset_database():
-    client = chromadb.Client()
-    try:
-        client.delete_collection("docs")
-    except:
-        pass
-    return client.create_collection("docs")
 import streamlit as st
 import chromadb
 from transformers import pipeline, AutoTokenizer, AutoModel
@@ -20,6 +12,33 @@ from docling.backend.docling_parse_v2_backend import DoclingParseV2DocumentBacke
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, AcceleratorOptions, AcceleratorDevice
 from utils_img import get_base64_of_local_image
+
+def get_chroma_client():
+    # Use new ChromaDB PersistentClient API (DuckDB/Parquet, local storage)
+    return chromadb.PersistentClient(path=".chromadb")
+
+# --- FIX: Reset collection when problems occur
+
+def reset_database():
+    client = get_chroma_client()
+    try:
+        client.delete_collection("docs")
+    except:
+        pass
+    return client.create_collection("docs")
+
+client = get_chroma_client()
+collection = client.get_or_create_collection("docs")
+tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+qa_pipeline = pipeline("text2text-generation", model="google/flan-t5-small")
+
+def embed_text(text):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    embedding = outputs.last_hidden_state.mean(dim=1).numpy()[0]
+    return embedding.tolist()
 
 def convert_to_markdown(file_path: str) -> str:
     path = Path(file_path)
@@ -54,18 +73,6 @@ def convert_to_markdown(file_path: str) -> str:
             return path.read_text(encoding="latin-1", errors="replace")
 
     raise ValueError(f"Unsupported extension: {ext}")
-
-client = chromadb.Client()
-collection = client.get_or_create_collection("docs")
-tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-
-def embed_text(text):
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-    with torch.no_grad():
-        outputs = model(**inputs)
-    embedding = outputs.last_hidden_state.mean(dim=1).numpy()[0]
-    return embedding.tolist()
 
 def show_document_manager():
     """Display document manager interface"""
@@ -318,7 +325,9 @@ def main():
                     n_results=1
                 )
                 if results["documents"]:
-                    answer = results["documents"][0][0]
+                    context = results["documents"][0][0]
+                    prompt = f"Context: {context}\n\nQuestion: {question}\n\nAnswer:"
+                    answer = qa_pipeline(prompt, max_length=150)[0]['generated_text'].strip()
                     st.markdown("### 💡 Answer")
                     st.write(answer)
                     st.info(f"📄 Source: {st.session_state.converted_docs[0]['filename']}")
